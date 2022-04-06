@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Parameters:
+  SecretName:
+    Type: String
+    Default: altery/production/hectacloud
+
+Resources:
+  Secret:
+    Type: AWS::SecretsManager::Secret
+    DependsOn:
+      - CognitoPool
+      - CognitoAppClient
+    Properties: 
+      Description: Altery
+      Name: !Ref SecretName
+      SecretString:
+        'Fn::Join':
+              - ''
+              - - '{"AWS_POOL_ID":"'
+                - Ref: CognitoPool
+                - '","AWS_CLIENT_ID":"'
+                - Ref: CognitoAppClient
+                - '"}'
+
+  CognitoPool:
+    Type: "AWS::Cognito::UserPool"
+    Properties:
+      UserPoolName: Altery-user-pool
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 7
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+          RequireUppercase: false
+      Schema:
+        - Name: sub
+          AttributeDataType: String
+          DeveloperOnlyAttribute: false
+          Mutable: false
+          Required: true
+          StringAttributeConstraints:
+            MinLength: '1'
+            MaxLength: '2048'
+        - Name: name
+          AttributeDataType: String
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Required: true
+          StringAttributeConstraints:
+            MinLength: '0'
+            MaxLength: '2048'
+        - Name: family_name
+          AttributeDataType: String
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Required: true
+          StringAttributeConstraints:
+            MinLength: '0'
+            MaxLength: '2048'
+        - Name: email
+          AttributeDataType: String
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Required: true
+          StringAttributeConstraints:
+            MinLength: '0'
+            MaxLength: '2048'
+        - Name: email_verified
+          AttributeDataType: Boolean
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Required: false
+        - Name: gender
+          AttributeDataType: String
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Required: true
+          StringAttributeConstraints:
+            MinLength: '0'
+            MaxLength: '2048'
+        - Name: phone_number
+          AttributeDataType: String
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Required: true
+          StringAttributeConstraints:
+            MinLength: '0'
+            MaxLength: '2048'
+        - Name: citizen
+          AttributeDataType: String
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Required: false
+          StringAttributeConstraints:
+            MinLength: '1'
+            MaxLength: '256'
+      SmsVerificationMessage: 'Your verification code is {####}. '
+      EmailVerificationMessage: 'Your verification code is {####}. '
+      EmailVerificationSubject: Your verification code
+      VerificationMessageTemplate:
+        SmsMessage: 'Your verification code is {####}. '
+        EmailMessage: 'Your verification code is {####}. '
+        EmailSubject: Your verification code
+        DefaultEmailOption: CONFIRM_WITH_CODE
+      SmsAuthenticationMessage: 'Your authentication code is {####}. '
+      MfaConfiguration: 'OFF'
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+        UnusedAccountValidityDays: 7
+        InviteMessageTemplate:
+          SMSMessage: 'Your username is {username} and temporary password is {####}. '
+          EmailMessage: 'Your username is {username} and temporary password is {####}. '
+          EmailSubject: Your temporary password
+      UsernameConfiguration:
+        CaseSensitive: false
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+        - Priority: 1
+          Name: verified_email
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+        
+
+  CognitoAppClient:
+    Type: "AWS::Cognito::UserPoolClient"
+    Properties:
+      ClientName: Altery-app-client
+      GenerateSecret: false
+      UserPoolId: !Ref CognitoPool
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      AllowedOAuthFlowsUserPoolClient: false
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+    
+
+
+
+Outputs:
+
+  CognitoPool:
+    Description: Cognito user pool - Cloudformation
+    Value: !Ref CognitoPool
+
+  CognitoAppClient:
+    Description: Cognito App Client - Cloudformation
+    Value: !Ref CognitoAppClient
+
+  Secret:
+    Description: Generated Secret - Cloudformation
+    Value: !Ref Secret

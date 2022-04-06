@@ -1,0 +1,629 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+
+Parameters:
+  ApiGatewayName: 
+    Type: String
+    Default: altery-complaints-gateway
+
+Resources:
+  AlteryBackend:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      FunctionName: AlteryLambda
+      CodeUri: s3://altery-lambda-backend/alteryLambda.zip
+      Handler: index.handler
+      Runtime: nodejs14.x
+      MemorySize: 128
+      Timeout: 3
+      Role: >-
+        arn:aws:iam::403229885123:role/service-role/altery-login-backend-role-lfm9pbsu
+  
+  APIGateway:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: !Ref ApiGatewayName
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Description: API used for Event requests
+      FailOnWarnings: true
+
+  AlteryPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:invokeFunction'
+      FunctionName:
+        'Fn::GetAtt':
+          - AlteryBackend
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        'Fn::Join':
+          - ''
+          - - 'arn:aws:execute-api:'
+            - Ref: 'AWS::Region'
+            - ':'
+            - Ref: 'AWS::AccountId'
+            - ':'
+            - Ref: APIGateway
+            - /*
+
+  APIGatewayStage:
+    Type: 'AWS::ApiGateway::Stage'
+    DependsOn:
+      - APIGatewayDeployment
+    Properties:
+      DeploymentId:
+        Ref: APIGatewayDeployment
+      RestApiId:
+        Ref: APIGateway
+      StageName: production
+
+  APIGatewayDeployment:
+    Type: 'AWS::ApiGateway::Deployment'
+    DependsOn:
+      - AddComplaintsOptionMethod
+      - AddComplaintsPostMethod
+      - FindComplaintsGetMethod
+      - FindComplaintsOptionMethod
+      - FindComplaintPostMethod
+      - FindComplaintOptionMethod
+      - UpdateComplaintsPostMethod
+      - UpdateComplaintsOptionMethod
+    Properties:
+      RestApiId:
+        Ref: APIGateway
+
+  AddComplaintsMethodResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId:
+        Ref: APIGateway
+      PathPart: addcomplaints
+      ParentId:
+        'Fn::GetAtt':
+          - APIGateway
+          - RootResourceId
+  
+  AddComplaintsOptionMethod:
+    DependsOn: AlteryPermission
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      RestApiId:
+        Ref: APIGateway
+      ResourceId:
+        Ref: AddComplaintsMethodResource    
+      Integration:
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            "method.response.header.Access-Control-Allow-Methods": "'OPTIONS'"
+            "method.response.header.Access-Control-Allow-Origin": "'*'"
+          ResponseTemplates:
+            application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": false
+            "method.response.header.Access-Control-Allow-Methods": false
+            "method.response.header.Access-Control-Allow-Origin": false
+
+  AddComplaintsPostMethod:
+    DependsOn: AlteryPermission
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId:
+        Ref: AddComplaintsMethodResource
+      RestApiId:
+        Ref: APIGateway
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_TEMPLATES
+        Uri:
+          'Fn::Join':
+            - ''
+            - - 'arn:aws:apigateway:'
+              - Ref: 'AWS::Region'
+              - ':lambda:path/2015-03-31/functions/'
+              - 'Fn::GetAtt':
+                  - AlteryBackend
+                  - Arn
+              - /invocations
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers" : "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            "method.response.header.Access-Control-Allow-Methods": "'POST'"
+            "method.response.header.Access-Control-Allow-Origin" : "'*'"
+          ResponseTemplates:
+            application/json: ''
+        RequestTemplates:
+          application/json: '#set($allParams = $input.params())
+                    {
+                    "body-json" : $input.json("$"),
+                    "params" : {
+                    #foreach($type in $allParams.keySet())
+                        #set($params = $allParams.get($type))
+                    "$type" : {
+                        #foreach($paramName in $params.keySet())
+                        "$paramName" : "$util.escapeJavaScript($params.get($paramName))"
+                            #if($foreach.hasNext),#end
+                        #end
+                    }
+                        #if($foreach.hasNext),#end
+                    #end
+                    },
+                    "stage-variables" : {
+                    #foreach($key in $stageVariables.keySet())
+                    "$key" : "$util.escapeJavaScript($stageVariables.get($key))"
+                        #if($foreach.hasNext),#end
+                    #end
+                    },
+                    "context" : {
+                        "account-id" : "$context.identity.accountId",
+                        "api-id" : "$context.apiId",
+                        "api-key" : "$context.identity.apiKey",
+                        "authorizer-principal-id" : "$context.authorizer.principalId",
+                        "caller" : "$context.identity.caller",
+                        "cognito-authentication-provider" : "$context.identity.cognitoAuthenticationProvider",
+                        "cognito-authentication-type" : "$context.identity.cognitoAuthenticationType",
+                        "cognito-identity-id" : "$context.identity.cognitoIdentityId",
+                        "cognito-identity-pool-id" : "$context.identity.cognitoIdentityPoolId",
+                        "http-method" : "$context.httpMethod",
+                        "stage" : "$context.stage",
+                        "source-ip" : "$context.identity.sourceIp",
+                        "user" : "$context.identity.user",
+                        "user-agent" : "$context.identity.userAgent",
+                        "user-arn" : "$context.identity.userArn",
+                        "request-id" : "$context.requestId",
+                        "resource-id" : "$context.resourceId",
+                        "resource-path" : "$context.resourcePath"
+                        }
+                    }'
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": false
+            "method.response.header.Access-Control-Allow-Methods": false
+            "method.response.header.Access-Control-Allow-Origin": false
+      
+  FindComplaintMethodResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId:
+        Ref: APIGateway
+      PathPart: findcomplaint
+      ParentId:
+        'Fn::GetAtt':
+          - APIGateway
+          - RootResourceId
+  
+  FindComplaintOptionMethod:
+    DependsOn: AlteryPermission
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      RestApiId:
+        Ref: APIGateway
+      ResourceId:
+        Ref: FindComplaintMethodResource      
+      Integration:
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            "method.response.header.Access-Control-Allow-Methods": "'OPTIONS'"
+            "method.response.header.Access-Control-Allow-Origin": "'*'"
+          ResponseTemplates:
+            application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": false
+            "method.response.header.Access-Control-Allow-Methods": false
+            "method.response.header.Access-Control-Allow-Origin": false
+
+  FindComplaintPostMethod:
+    DependsOn: AlteryPermission
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId:
+        Ref: FindComplaintMethodResource
+      RestApiId:
+        Ref: APIGateway
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_TEMPLATES
+        Uri:
+          'Fn::Join':
+            - ''
+            - - 'arn:aws:apigateway:'
+              - Ref: 'AWS::Region'
+              - ':lambda:path/2015-03-31/functions/'
+              - 'Fn::GetAtt':
+                  - AlteryBackend
+                  - Arn
+              - /invocations
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers" : "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            "method.response.header.Access-Control-Allow-Methods": "'POST'"
+            "method.response.header.Access-Control-Allow-Origin" : "'*'"
+          ResponseTemplates:
+            application/json: ''
+        RequestTemplates:
+          application/json: '#set($allParams = $input.params())
+                    {
+                    "body-json" : $input.json("$"),
+                    "params" : {
+                    #foreach($type in $allParams.keySet())
+                        #set($params = $allParams.get($type))
+                    "$type" : {
+                        #foreach($paramName in $params.keySet())
+                        "$paramName" : "$util.escapeJavaScript($params.get($paramName))"
+                            #if($foreach.hasNext),#end
+                        #end
+                    }
+                        #if($foreach.hasNext),#end
+                    #end
+                    },
+                    "stage-variables" : {
+                    #foreach($key in $stageVariables.keySet())
+                    "$key" : "$util.escapeJavaScript($stageVariables.get($key))"
+                        #if($foreach.hasNext),#end
+                    #end
+                    },
+                    "context" : {
+                        "account-id" : "$context.identity.accountId",
+                        "api-id" : "$context.apiId",
+                        "api-key" : "$context.identity.apiKey",
+                        "authorizer-principal-id" : "$context.authorizer.principalId",
+                        "caller" : "$context.identity.caller",
+                        "cognito-authentication-provider" : "$context.identity.cognitoAuthenticationProvider",
+                        "cognito-authentication-type" : "$context.identity.cognitoAuthenticationType",
+                        "cognito-identity-id" : "$context.identity.cognitoIdentityId",
+                        "cognito-identity-pool-id" : "$context.identity.cognitoIdentityPoolId",
+                        "http-method" : "$context.httpMethod",
+                        "stage" : "$context.stage",
+                        "source-ip" : "$context.identity.sourceIp",
+                        "user" : "$context.identity.user",
+                        "user-agent" : "$context.identity.userAgent",
+                        "user-arn" : "$context.identity.userArn",
+                        "request-id" : "$context.requestId",
+                        "resource-id" : "$context.resourceId",
+                        "resource-path" : "$context.resourcePath"
+                        }
+                    }'
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": false
+            "method.response.header.Access-Control-Allow-Methods": false
+            "method.response.header.Access-Control-Allow-Origin": false
+
+  FindComplaintsMethodResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId:
+        Ref: APIGateway
+      PathPart: findcomplaints
+      ParentId:
+        'Fn::GetAtt':
+          - APIGateway
+          - RootResourceId
+  
+  FindComplaintsOptionMethod:
+    DependsOn: AlteryPermission
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      RestApiId:
+        Ref: APIGateway
+      ResourceId:
+        Ref: FindComplaintsMethodResource      
+      Integration:
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            "method.response.header.Access-Control-Allow-Methods": "'OPTIONS'"
+            "method.response.header.Access-Control-Allow-Origin": "'*'"
+          ResponseTemplates:
+            application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": false
+            "method.response.header.Access-Control-Allow-Methods": false
+            "method.response.header.Access-Control-Allow-Origin": false
+
+  FindComplaintsGetMethod:
+    DependsOn: AlteryPermission
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId:
+        Ref: FindComplaintsMethodResource
+      RestApiId:
+        Ref: APIGateway
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_TEMPLATES
+        Uri:
+          'Fn::Join':
+            - ''
+            - - 'arn:aws:apigateway:'
+              - Ref: 'AWS::Region'
+              - ':lambda:path/2015-03-31/functions/'
+              - 'Fn::GetAtt':
+                  - AlteryBackend
+                  - Arn
+              - /invocations
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers" : "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            "method.response.header.Access-Control-Allow-Methods": "'POST'"
+            "method.response.header.Access-Control-Allow-Origin" : "'*'"
+          ResponseTemplates:
+            application/json: ''
+        RequestTemplates:
+          application/json: '#set($allParams = $input.params())
+                    {
+                    "body-json" : $input.json("$"),
+                    "params" : {
+                    #foreach($type in $allParams.keySet())
+                        #set($params = $allParams.get($type))
+                    "$type" : {
+                        #foreach($paramName in $params.keySet())
+                        "$paramName" : "$util.escapeJavaScript($params.get($paramName))"
+                            #if($foreach.hasNext),#end
+                        #end
+                    }
+                        #if($foreach.hasNext),#end
+                    #end
+                    },
+                    "stage-variables" : {
+                    #foreach($key in $stageVariables.keySet())
+                    "$key" : "$util.escapeJavaScript($stageVariables.get($key))"
+                        #if($foreach.hasNext),#end
+                    #end
+                    },
+                    "context" : {
+                        "account-id" : "$context.identity.accountId",
+                        "api-id" : "$context.apiId",
+                        "api-key" : "$context.identity.apiKey",
+                        "authorizer-principal-id" : "$context.authorizer.principalId",
+                        "caller" : "$context.identity.caller",
+                        "cognito-authentication-provider" : "$context.identity.cognitoAuthenticationProvider",
+                        "cognito-authentication-type" : "$context.identity.cognitoAuthenticationType",
+                        "cognito-identity-id" : "$context.identity.cognitoIdentityId",
+                        "cognito-identity-pool-id" : "$context.identity.cognitoIdentityPoolId",
+                        "http-method" : "$context.httpMethod",
+                        "stage" : "$context.stage",
+                        "source-ip" : "$context.identity.sourceIp",
+                        "user" : "$context.identity.user",
+                        "user-agent" : "$context.identity.userAgent",
+                        "user-arn" : "$context.identity.userArn",
+                        "request-id" : "$context.requestId",
+                        "resource-id" : "$context.resourceId",
+                        "resource-path" : "$context.resourcePath"
+                        }
+                    }'
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": false
+            "method.response.header.Access-Control-Allow-Methods": false
+            "method.response.header.Access-Control-Allow-Origin": false
+
+  UpdateComplaintsMethodResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId:
+        Ref: APIGateway
+      PathPart: updatecomplaints
+      ParentId:
+        'Fn::GetAtt':
+          - APIGateway
+          - RootResourceId
+  
+  UpdateComplaintsOptionMethod:
+    DependsOn: AlteryPermission
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      RestApiId:
+        Ref: APIGateway
+      ResourceId:
+        Ref: UpdateComplaintsMethodResource      
+      Integration:
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            "method.response.header.Access-Control-Allow-Methods": "'OPTIONS'"
+            "method.response.header.Access-Control-Allow-Origin": "'*'"
+          ResponseTemplates:
+            application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": false
+            "method.response.header.Access-Control-Allow-Methods": false
+            "method.response.header.Access-Control-Allow-Origin": false
+
+  UpdateComplaintsPostMethod:
+    DependsOn: AlteryPermission
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId:
+        Ref: UpdateComplaintsMethodResource
+      RestApiId:
+        Ref: APIGateway
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_TEMPLATES
+        Uri:
+          'Fn::Join':
+            - ''
+            - - 'arn:aws:apigateway:'
+              - Ref: 'AWS::Region'
+              - ':lambda:path/2015-03-31/functions/'
+              - 'Fn::GetAtt':
+                  - AlteryBackend
+                  - Arn
+              - /invocations
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers" : "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            "method.response.header.Access-Control-Allow-Methods": "'POST'"
+            "method.response.header.Access-Control-Allow-Origin" : "'*'"
+          ResponseTemplates:
+            application/json: ''
+        RequestTemplates:
+          application/json: '#set($allParams = $input.params())
+                    {
+                    "body-json" : $input.json("$"),
+                    "params" : {
+                    #foreach($type in $allParams.keySet())
+                        #set($params = $allParams.get($type))
+                    "$type" : {
+                        #foreach($paramName in $params.keySet())
+                        "$paramName" : "$util.escapeJavaScript($params.get($paramName))"
+                            #if($foreach.hasNext),#end
+                        #end
+                    }
+                        #if($foreach.hasNext),#end
+                    #end
+                    },
+                    "stage-variables" : {
+                    #foreach($key in $stageVariables.keySet())
+                    "$key" : "$util.escapeJavaScript($stageVariables.get($key))"
+                        #if($foreach.hasNext),#end
+                    #end
+                    },
+                    "context" : {
+                        "account-id" : "$context.identity.accountId",
+                        "api-id" : "$context.apiId",
+                        "api-key" : "$context.identity.apiKey",
+                        "authorizer-principal-id" : "$context.authorizer.principalId",
+                        "caller" : "$context.identity.caller",
+                        "cognito-authentication-provider" : "$context.identity.cognitoAuthenticationProvider",
+                        "cognito-authentication-type" : "$context.identity.cognitoAuthenticationType",
+                        "cognito-identity-id" : "$context.identity.cognitoIdentityId",
+                        "cognito-identity-pool-id" : "$context.identity.cognitoIdentityPoolId",
+                        "http-method" : "$context.httpMethod",
+                        "stage" : "$context.stage",
+                        "source-ip" : "$context.identity.sourceIp",
+                        "user" : "$context.identity.user",
+                        "user-agent" : "$context.identity.userAgent",
+                        "user-arn" : "$context.identity.userArn",
+                        "request-id" : "$context.requestId",
+                        "resource-id" : "$context.resourceId",
+                        "resource-path" : "$context.resourcePath"
+                        }
+                    }'
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": false
+            "method.response.header.Access-Control-Allow-Methods": false
+            "method.response.header.Access-Control-Allow-Origin": false
+
+  AlteryEBSApp:
+    Type: "AWS::ElasticBeanstalk::Application"
+    Properties:
+      ApplicationName: Altery-EBS-Backend
+      
+  AlteryEBSAppVersion:
+    Type: "AWS::ElasticBeanstalk::ApplicationVersion"
+    Properties:
+      ApplicationName: !Ref AlteryEBSApp
+      Description: String
+      SourceBundle:
+        S3Bucket: altery-ebs-backend
+        S3Key: altery-backend.zip
+        
+  AlteryEBSAppEnvironment:
+    Type: "AWS::ElasticBeanstalk::Environment"
+    Properties:
+      EnvironmentName: !Join ["-", [!Ref AlteryEBSApp, "env"]]
+      ApplicationName: !Ref AlteryEBSApp
+      SolutionStackName: "64bit Amazon Linux 2 v3.4.13 running Docker"
+      Tier:
+        Name: WebServer
+        Type: Standard
+        Version: "1.0"
+      VersionLabel: !Ref AlteryEBSAppVersion
+      OptionSettings:
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: aws-elasticbeanstalk-ec2-role
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: EnvironmentType
+          Value: LoadBalanced   
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: LoadBalancerType
+          Value: application
+        - Namespace: aws:elbv2:listener:default
+          OptionName: ListenerEnabled
+          Value: true 
+
+
+Outputs:
+  ApiGateway:
+    Description: "API Gateway"
+    Value: !Ref APIGateway
+  ApplicationURL:
+    Description: "Application URL"
+    Value: !GetAtt 'AlteryEBSAppEnvironment.EndpointURL'
+

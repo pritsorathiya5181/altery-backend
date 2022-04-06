@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+
+
+Resources:  
+  AlteryEBSApp:
+    Type: "AWS::ElasticBeanstalk::Application"
+    Properties:
+      ApplicationName: Altery-EBS-FrontEnd
+      
+  AlteryEBSAppVersion:
+    Type: "AWS::ElasticBeanstalk::ApplicationVersion"
+    Properties:
+      ApplicationName: !Ref AlteryEBSApp
+      Description: String
+      SourceBundle:
+        S3Bucket: altery-frontend-code
+        S3Key: altery-frontend.zip
+        
+  AlteryEBSAppEnvironment:
+    Type: "AWS::ElasticBeanstalk::Environment"
+    Properties:
+      EnvironmentName: !Join ["-", [!Ref AlteryEBSApp, "env"]]
+      ApplicationName: !Ref AlteryEBSApp
+      SolutionStackName: "64bit Amazon Linux 2 v3.4.13 running Docker"
+      Tier:
+        Name: WebServer
+        Type: Standard
+        Version: "1.0"
+      VersionLabel: !Ref AlteryEBSAppVersion
+      OptionSettings:
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: aws-elasticbeanstalk-ec2-role
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: EnvironmentType
+          Value: LoadBalanced   
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: LoadBalancerType
+          Value: application
+        - Namespace: aws:elbv2:listener:default
+          OptionName: ListenerEnabled
+          Value: true 
+
+Outputs:
+  ApplicationURL:
+    Description: "Application URL"
+    Value: !GetAtt 'AlteryEBSAppEnvironment.EndpointURL'
