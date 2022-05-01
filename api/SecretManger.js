@@ -8,8 +8,8 @@ var AWS = require('aws-sdk'),
 // Create a Secrets Manager client
 var client = new AWS.SecretsManager({
   region: region,
-  accessKeyId: 'AKIAV3YS7YLB25VGNF6R',
-  secretAccessKey: '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',
+  accessKeyId: process.env.ACCESS_KEY_ID,
+  secretAccessKey: process.env.SECRET_ACCESS_KEY,
 })
 
 module.exports = getCredentials = async () => {
