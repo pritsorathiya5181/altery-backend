@@ -6,8 +6,8 @@ const getCredentials = require('./SecretManger')
 
 AWS.config.update({
   region: 'us-east-1',
-  accessKeyId: 'AKIAV3YS7YLB25VGNF6R',
-  secretAccessKey: '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',
+  accessKeyId: process.env.ACCESS_KEY_ID,
+  secretAccessKey: process.env.SECRET_ACCESS_KEY,
 })
 
 const signUp = async (req, res) => {
